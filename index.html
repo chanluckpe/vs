@@ -1688,7 +1688,7 @@ function refRolesFor(c, m) {
 }
 const refNames = m => m.refs ? m.refs.map(x => x.n) : (m.referee && m.referee !== '자율' ? [m.referee] : []);
 const refText = m => m.refs ? m.refs.map(x => `${x.r} ${x.n}`).join(' · ') : (m.referee || '');
-function refRelease(c, m) { refNames(m).forEach(n => { if (c.refCount[n]) c.refCount[n]--; }); m.referee = null; m.refs = null; m.refTeam = null; }
+function refRelease(c, m) { refNames(m).forEach(n => { if (c.refCount[n]) c.refCount[n]--; }); m.referee = null; m.refs = null; m.refTeam = null; delete m.refManual; }
 // 팀(또는 학생들)에게 역할 나누기: 주심을 덜 본 학생이 주심
 function refFill(c, m, names, roles, teamId) {
   c.refMain = c.refMain || {};
@@ -1723,6 +1723,8 @@ function assignCourts(c) {
   // 심판: 지금 경기하지 않는 학생 중 심판을 가장 적게 본 학생 (단식·복식은 같은 성별)
   if (rulesOf(c).referee === false) return;
   const playing = new Set(c.matches.filter(m => m.court && !m.done).flatMap(m => [m.a, m.b]));
+  // '자율'(그때 쉬는 사람이 없었음)인 경기는 다시 배정해 봄 (경기장 수를 줄였거나 경기가 끝나 쉬는 팀이 생긴 경우)
+  c.matches.forEach(m => { if (m.court && !m.done && m.referee === '자율' && !m.refManual) { m.referee = null; m.refs = null; } });
   c.matches.filter(m => m.court && !m.done && !m.referee).forEach(m => {
     const g = refGender(c, m); const roles = refRolesFor(c, m);
     const pool = c.roster.map(p => p.name).filter(n => !busy.has(n) && (!g || genderOf(n, c) === g));
@@ -3475,7 +3477,7 @@ const ACT = {
     S.mode = comboOf(list); S.teams = null; ui.swapSel = null; commit(); toast(`${sp.label} ${MODES[S.mode].label} 함께 진행`);
   },
   format: d => { S.format = d.v; commit(); },
-  courts: d => { S.courts = Math.max(1, Math.min(12, S.courts + +d.d)); if (S.comp && !S.comp.finishedAt) { S.comp.courts = S.courts; S.comp.matches.forEach(m => { if (m.court > S.courts && !m.done) m.court = null; }); assignCourts(S.comp); } commit(); },
+  courts: d => { S.courts = Math.max(1, Math.min(12, S.courts + +d.d)); if (S.comp && !S.comp.finishedAt) { S.comp.courts = S.courts; S.comp.matches.forEach(m => { if (m.court > S.courts && !m.done) { refRelease(S.comp, m); m.court = null; } }); assignCourts(S.comp); } commit(); },
   grpBy: d => { S.group = S.group || { by: 'count', count: 2, size: 4 }; S.group.by = d.v; S.teams = null; commit(); },
   grpStep: d => { S.group = S.group || { by: 'count', count: 2, size: 4 }; const k = S.group.by === 'count' ? 'count' : 'size'; S.group[k] = Math.max(k === 'count' ? 2 : 1, Math.min(40, S.group[k] + +d.d)); S.teams = null; commit(); },
   methodOpen: () => { ui.methodOpen = !ui.methodOpen; render(); },
@@ -3504,7 +3506,7 @@ const ACT = {
   openSB: d => openSB(d.m),
   openMatch: d => openModal({ type: 'match', m: d.m }),
   refChange: d => openModal({ type: 'ref', m: d.m }),
-  refSet: d => { const c = S.comp, m = byId(c, d.m); refRelease(c, m); if (d.n === '자율') m.referee = '자율'; else refFill(c, m, [d.n], ['주심']); if (m.refs && m.refs.length === 1) m.refs = null; ui.modal = null; commit(); },
+  refSet: d => { const c = S.comp, m = byId(c, d.m); refRelease(c, m); delete m.refManual; if (d.n === '자율') { m.referee = '자율'; m.refManual = true; } else refFill(c, m, [d.n], ['주심']); if (m.refs && m.refs.length === 1) m.refs = null; ui.modal = null; commit(); },
   refTeamSet: d => { const c = S.comp, m = byId(c, d.m); const e = entOf(c, d.t); if (!e) return; refRelease(c, m); const abs = absentSet(); refFill(c, m, e.members.filter(n => !abs.has(n)), refRolesFor(c, m), e.id); renderModal(); commit(); },
   refRole: d => { const m = byId(S.comp, d.m); if (!m.refs) return; const i = +d.i, j = (i + 1) % m.refs.length; const a = m.refs[i].n; m.refs[i].n = m.refs[j].n; m.refs[j].n = a; m.referee = m.refs[0].n; renderModal(); commit(); },
   sbRally: d => sbPush({ w: d.s }),
@@ -4042,6 +4044,8 @@ function viewCourt() {
 
 /* 시작 */
 if (STORAGE_OK && lsGet(KEY_CUR)) ui.savedAt = S.updatedAt;
+// 진행 중인 경기: 비어 있는 심판('자율') 등을 지금 상황에 맞게 다시 배정
+try { if (S.comp && !S.comp.finishedAt && SY.mode !== 'court' && S.comp.matches.some(m => m.court && !m.done && m.referee === '자율' && !m.refManual)) { assignCourts(S.comp); save(); } } catch (e) { }
 render();
 setTimeout(async () => { getDL(); const db = await getDB(); if (!db && SY.mode !== 'local') { SY.mode = 'local'; SY.code = ''; syncSaveMode(); render(); } else if (SY.mode !== 'local') syncConnect(); }, 0);
 if (firstRun) save();
