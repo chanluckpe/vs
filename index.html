@@ -1898,7 +1898,10 @@ function sideHTML(c, id) {
   return `<div class="nm">${esc(entName(c, id))}</div><div class="mb">${esc(entSub(c, id))}</div>`;
 }
 function cellHTML(c, id) {
-  if (isPairMode(c)) return `<span class="nmw cell"><span class="tn">${esc(pairTeam(c, id))}</span><b>${esc(entName(c, id))}</b></span>`;
+  // 팀(복식 포함): 팀 이름을 진하게, 그 아래 소속 선수 이름
+  const e = entOf(c, id);
+  if (e && MODES[c.mode].team && e.members.length >= 2) return `<b>${esc(e.name)}</b><div class="muted tiny">${esc(e.members.join(' · '))}${e.extra && e.extra.length ? ` <span class="star">★${esc(e.extra.join('·'))}</span>` : ''}</div>`;
+  if (e && e.members.length === 1) return `<b>${esc(e.name)}</b>`;
   return `<b>${esc(entName(c, id))}</b>${MODES[c.mode].team ? `<div class="muted tiny">${esc(entSub(c, id))}</div>` : ''}`;
 }
 function stageLabel(c, m) {
@@ -2247,7 +2250,7 @@ function viewRecords() {
   const teamPanel = T ? `<section class="panel" id="recTeam">
       <div class="panel-h"><h2>팀별 기록 <span class="muted small">${c.entrants.length}팀</span></h2>${expBtns('recT')}</div>
       ${standingGroups(c).map(g => `${g.label ? `<h4 class="st-g">${esc(g.label)}</h4>` : ''}<div class="scroll-x"><table class="tbl"><thead><tr><th>순위</th><th class="l">팀</th><th>경기</th><th>승</th>${lg ? '<th>무</th>' : ''}<th>패</th><th>득실</th>${lg ? '<th>승점</th>' : ''}</tr></thead><tbody>
-        ${g.rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''}"><td class="rank">${i + 1}</td><td class="l">${isPairMode(c) ? cellHTML(c, r.e.id) : `<b>${esc(entName(c, r.e.id))}</b><div class="muted tiny">${esc(r.e.members.join(' · '))}</div>`}</td><td>${r.played}</td><td>${r.w}</td>${lg ? `<td>${r.d}</td>` : ''}<td>${r.l}</td><td>${r.gd > 0 ? '+' : ''}${r.gd}</td>${lg ? `<td class="pts">${r.pts}</td>` : ''}</tr>`).join('')}
+        ${g.rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''}"><td class="rank">${i + 1}</td><td class="l">${cellHTML(c, r.e.id)}</td><td>${r.played}</td><td>${r.w}</td>${lg ? `<td>${r.d}</td>` : ''}<td>${r.l}</td><td>${r.gd > 0 ? '+' : ''}${r.gd}</td>${lg ? `<td class="pts">${r.pts}</td>` : ''}</tr>`).join('')}
       </tbody></table></div>`).join('')}
       <p class="muted tiny" style="margin:10px 0 0">${lg ? esc(ruleText(rulesOf(c))) : '토너먼트 순위는 늦게 탈락한 순서예요'}</p>
     </section>` : '';
