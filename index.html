@@ -1375,6 +1375,31 @@ function teamMethod() { const m = (S.teamMethod || {})[S.mode]; const ok = k => 
 const lvOfName = n => (S.roster.find(p => p.name === n) || {}).lv || 4;
 const byLvDesc = arr => shuffle(arr).sort((a, b) => lvOfName(b) - lvOfName(a));
 const highLow = arr => { const s = byLvDesc(arr), out = []; let i = 0, j = s.length - 1; while (i <= j) { out.push(s[i++]); if (i <= j) out.push(s[j--]); } return out; };
+// 레벨 고르게 + 다시 섞기: 먼저 무작위로 여러 번 섞어 보고, 팀 평균 레벨 차이가 작은 배치들 가운데 하나를 고름.
+// (가장 고른 배치만 고집하지 않음 → 누를 때마다 팀이 바뀌고, 7+1이 안 되면 7+3도 허용)
+function rebalanceTeams(list) {
+  if (list.length < 2) return;
+  const key = L => L.map(t => [...t.members].sort().join(',')).sort().join('|');
+  const prev = S.teams && S.teams.list ? key(S.teams.list) : '';
+  const groups = {}; list.forEach((t, i) => (groups[t.tag || ''] = groups[t.tag || ''] || []).push(i));
+  // 자리: 팀마다 (보조 ★ 제외) 남/여 자리 수는 그대로
+  const slots = list.map(t => t.members.filter(n => !t.extra.includes(n)).map(n => genderOf(n)));
+  const pool = {}; Object.entries(groups).forEach(([gk, idx]) => idx.forEach(i => list[i].members.filter(n => !list[i].extra.includes(n)).forEach(n => { const k = gk + '|' + genderOf(n); (pool[k] = pool[k] || []).push(n); })));
+  const avg = ms => ms.reduce((a, n) => a + lvOfName(n), 0) / Math.max(1, ms.length);
+  const deal = () => {
+    const P = {}; Object.entries(pool).forEach(([k, v]) => P[k] = shuffle(v));
+    return list.map((t, i) => { const gk = t.tag || ''; const base = slots[i].map(g => P[gk + '|' + g].pop()); return [...base, ...t.extra]; });
+  };
+  const score = M => Object.values(groups).reduce((a, idx) => { const v = idx.map(i => avg(M[i])); return a + (Math.max(...v) - Math.min(...v)); }, 0);
+  const cands = []; for (let k = 0; k < 500; k++) { const M = deal(); cands.push({ M, s: score(M), k: key(M.map(m => ({ members: m }))) }); }
+  const best = Math.min(...cands.map(x => x.s)); const size = Math.max(...list.map(t => t.members.length));
+  let tol = size <= 2 ? 0.5 : 0.35, pick = [];
+  for (let step = 0; step < 8 && !pick.length; step++, tol += size <= 2 ? 0.5 : 0.35) pick = cands.filter(x => x.s <= best + tol + 1e-9 && x.k !== prev);
+  if (!pick.length) pick = cands.filter(x => x.k !== prev);
+  if (!pick.length) return;
+  const ch = pick[Math.floor(Math.random() * pick.length)];
+  list.forEach((t, i) => { t.members = ch.M[i]; });
+}
 function buildTeams(randomize) {
   const mode = S.mode;
   if (!MODES[mode].team) return null;
@@ -1444,6 +1469,7 @@ function buildTeams(randomize) {
     for (let i = 0; i < cnt; i++) push([M[i * 2], M[i * 2 + 1], F[i * 2], F[i * 2 + 1]], []);
     if (cnt) [...M.slice(cnt * 2), ...F.slice(cnt * 2)].forEach((n, k) => list[k % cnt].members.push(n));
   }
+  if (randomize && ['level', 'mixLevel', 'split'].includes(meth)) rebalanceTeams(list);
   return { mode, sig: rosterSig(), list };
 }
 function revealTeams() {
