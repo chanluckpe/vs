@@ -1133,6 +1133,17 @@ th.ps, td.ps { background: rgba(31, 63, 191, .05); }
 .sf-links a:hover { transform: translateY(-1px); border-color: var(--line-strong); box-shadow: 0 4px 12px -6px rgba(20, 24, 43, .35); }
 .sf-links svg { width: 16px; height: 16px; flex: none; }
 @media print { .site-foot { display: none; } }
+/* 세트 점수: 가운데 크게(세트), 아래 세트별 작게 */
+.mid.set-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; line-height: 1; }
+.mid.set-mid .sm-k { font-family: var(--f-ui); font-size: 11px; font-weight: 700; color: var(--ink-3, #8a8fa3); letter-spacing: .5px; }
+.mid.set-mid .sm-v { font-family: var(--f-num); font-weight: 700; font-size: 34px; }
+.mid.set-mid .sm-v i { font-style: normal; opacity: .45; margin: 0 4px; }
+.set-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 0 12px 10px; }
+.set-strip .ss { display: inline-flex; align-items: baseline; gap: 3px; font-family: var(--f-num); font-size: 15px; font-weight: 600; color: var(--ink-2, #555); background: var(--surface-2, #f3f0ea); border: 1px solid var(--line); border-radius: 8px; padding: 2px 9px; }
+.set-strip .ss em { font-family: var(--f-ui); font-style: normal; font-size: 11px; font-weight: 700; color: var(--ink-3, #8a8fa3); margin-right: 3px; }
+.set-strip .ss b { font-weight: 700; } .set-strip .ss b.w { color: var(--cobalt, #2648c9); }
+.set-strip .ss.live { border-color: #ff8a5c; background: #fff3ec; color: var(--ink); }
+.set-strip .ss.live em::after { content: " 진행 중"; color: #e0582e; }
 
 </style>
 <header class="topbar">
@@ -2292,8 +2303,22 @@ const isFresh = m => ui.freshUntil && ui.freshUntil[m.id] > Date.now();
 function evalHoldCard(c, m) {
   const ev = c.evals[m.id]; const ps = playersOf(c, m); const n = ps.filter(p => ev && ev.players && ev.players[p.name] && Object.keys(ev.players[p.name]).length).length;
   return `<article class="court evalw ${grpCls(m)}"><div class="court-h">${m.grp ? `<span class="g-tag">${m.grp}자</span>` : ''}<span class="rtag">${esc(roundTag(c, m))}</span><b>경기장 ${m.court}</b><span class="court-r"><span class="ew-pill">태도평가 중</span></span></div>
-    <div class="vs"><div class="side a ${m.winner === 'a' ? 'win' : ''}">${sideHTML(c, m.a)}</div><div class="mid scored">${scoreText(c, m)}</div><div class="side b ${m.winner === 'b' ? 'win' : ''}">${sideHTML(c, m.b)}</div></div>
+    <div class="vs"><div class="side a ${m.winner === 'a' ? 'win' : ''}">${sideHTML(c, m.a)}</div>${setScoreMid(c, m) || `<div class="mid scored">${scoreText(c, m)}</div>`}<div class="side b ${m.winner === 'b' ? 'win' : ''}">${sideHTML(c, m.b)}</div></div>${setStrip(c, m)}
     <div class="ew-foot"><span class="ew-dots"><i></i><i></i><i></i></span><span>${SY.mode === 'host' ? '경기장 기기에서 태도 평가를 하고 있어요' : '태도 평가를 마치면 다음 경기가 올라와요'}${n ? ` · ${n}/${ps.length}명 입력` : ''}</span><button class="btn sm" data-act="evalOpen" data-m="${m.id}">${SY.mode === 'host' ? '평가 보기' : '평가하기'}</button></div></article>`;
+}
+// 3판 2선승 이상: 가운데 크게 세트 점수(총), 아래에 세트별 점수를 작게
+const multiSet = (c, m) => !!(m.games && !m.subs && (m.bo || rulesOf(c).sets || 1) >= 3);
+function setScoreMid(c, m) {
+  if (!multiSet(c, m)) return '';
+  const t = teamTotals(m); const any = m.games.some(g => g.sa !== '' || g.sb !== '');
+  return `<div class="mid scored set-mid"><span class="sm-k">세트</span><span class="sm-v">${t.wa}<i>:</i>${t.wb}</span>${any ? '' : '<span class="sm-k">경기 전</span>'}</div>`;
+}
+function setStrip(c, m) {
+  if (!multiSet(c, m)) return '';
+  const gs = m.games.filter((g, i) => g.sa !== '' || g.sb !== '' || i === m.games.length - 1);
+  if (!gs.some(g => g.sa !== '' || g.sb !== '')) return '';
+  return `<div class="set-strip">${gs.map((g, i) => { const fin = isFinished(g.sa, g.sb, c); const a = toNum(g.sa) || 0, b = toNum(g.sb) || 0;
+    return `<span class="ss ${fin ? 'fin' : 'live'}"><em>${esc(g.label || (i + 1) + '세트')}</em><b class="${fin && a > b ? 'w' : ''}">${a}</b>:<b class="${fin && b > a ? 'w' : ''}">${b}</b></span>`; }).join('')}</div>`;
 }
 function courtCard(c, m) {
   if (m.done && evalHold(c, m)) return evalHoldCard(c, m);
@@ -2301,8 +2326,8 @@ function courtCard(c, m) {
   return `<article class="court ${grpCls(m)} ${isFresh(m) ? 'fresh' : ''} ${started ? '' : 'ready'} ${ui.nextAsk && ui.nextAsk.mid === m.id ? 'ask' : ''}"><div class="court-h">${m.grp ? `<span class="g-tag">${m.grp}자</span>` : ''}<span class="rtag">${esc(roundTag(c, m))}</span><b>경기장 ${m.court}</b><span class="pill ${started ? 'live' : 'wait'} c-state">${started ? '진행 중' : '시작 전'}</span>
       <span class="court-r">${rulesOf(c).referee === false && !m.referee ? '' : `<button class="refbtn" data-act="refChange" data-m="${m.id}" title="눌러서 심판 바꾸기">심판 <b>${esc(m.refs && m.refs.length > 1 ? (m.refTeam && entOf(c, m.refTeam) ? entOf(c, m.refTeam).name : '학생 ' + m.refs.length + '명') : (m.referee || '-'))}</b></button>`}<button class="btn go sm" data-act="openSB" data-m="${m.id}">${started ? '점수판 열기' : '▶ 경기 시작'}</button></span></div>
     ${m.refs && m.refs.length > 1 ? `<div class="ref-roles">${m.refs.map(x => `<span><em>${esc(x.r)}</em>${esc(x.n)}</span>`).join('')}</div>` : ''}<div class="vs"><div class="side a">${sideHTML(c, m.a)}</div>
-    <div class="mid ${st !== 'vs' ? 'scored' : ''}">${st}</div>
-    <div class="side b">${sideHTML(c, m.b)}</div></div>${m.subs ? `<ol class="sub-list">${m.subs.map((x, i) => { const fin = isFinished(x.sa, x.sb, c); return `<li class="${fin ? 'fin' : ''}"><span class="sl-k">${i + 1}경기 · ${esc(x.label)}</span><span class="sl-a">${esc(x.pa.join(' · ') || '-')}</span><span class="sl-s num">${x.sa === '' ? 'vs' : `${x.sa} : ${x.sb}`}</span><span class="sl-b">${esc(x.pb.join(' · ') || '-')}</span></li>`; }).join('')}</ol>` : ''}</article>`;
+    ${setScoreMid(c, m) || `<div class="mid ${st !== 'vs' ? 'scored' : ''}">${st}</div>`}
+    <div class="side b">${sideHTML(c, m.b)}</div></div>${setStrip(c, m)}${m.subs ? `<ol class="sub-list">${m.subs.map((x, i) => { const fin = isFinished(x.sa, x.sb, c); return `<li class="${fin ? 'fin' : ''}"><span class="sl-k">${i + 1}경기 · ${esc(x.label)}</span><span class="sl-a">${esc(x.pa.join(' · ') || '-')}</span><span class="sl-s num">${x.sa === '' ? 'vs' : `${x.sa} : ${x.sb}`}</span><span class="sl-b">${esc(x.pb.join(' · ') || '-')}</span></li>`; }).join('')}</ol>` : ''}</article>`;
 }
 function mRow(c, m) {
   const st = m.done ? (m.bye ? '<span class="pill wait">부전승</span>' : (!attOn(c) || c.evals[m.id]?.done ? '<span class="pill done">완료</span>' : '<span class="pill warn">평가 전</span>'))
@@ -3624,7 +3649,9 @@ const ACT = {
     const el = $('#msgText'); const text = (el && el.value || '').trim().slice(0, 120); if (!text) { toast('보낼 내용을 적어 주세요'); return; }
     if (SY.mode !== 'host' || !SY.code) { toast('진행 기기로 연결돼 있을 때만 보낼 수 있어요'); return; }
     const to = ui.msgTo || 'all'; const doc = { id: uid(), text, to, t: Date.now() };
+    SY.sent = SY.sent || {}; SY.sent[doc.id] = { acks: {} };
     dbWrite(`rooms/${SY.code}/msg/${to}`, doc); ui.modal = null; renderModal();
+    setTimeout(() => { const a = SY.sent[doc.id]; if (a && !Object.keys(a.acks).length) toast('아직 받았다는 기기가 없어요 · 경기장 기기가 이 수업 코드로 연결돼 있는지, 새 버전으로 새로 고침했는지 확인해 주세요'); }, 20000);
     toast(to === 'all' ? '모든 경기장 기기로 보냈어요' : `경기장 ${to.slice(1)}번 기기로 보냈어요`);
   },
   boardOpen: d => { boardClose(d.id); if (S.comp && byId(S.comp, d.m)) openModal({ type: 'eval', m: d.m, wide: true }); },
@@ -4137,8 +4164,9 @@ function syncMatch(m) { if (SY.mode === 'local' || !SY.ready || !S.comp || !m) r
 // 경기장 기기 → 진행 기기: 공유 데이터를 쓸 수 있으면 저장소로, 없으면(링크만 받은 사람) 실시간 방으로 전달
 function courtPut(m, extra) {
   const d = { ...matchPayload(S.comp, m), ...(extra || {}) };
-  if (!SY.viaRoom) { dbWrite(`rooms/${SY.code}/m/${m.id}`, d); return; }
+  // 이 기기에서 방금 바꾼 점수는 항상 기억해 두고, 진행 기기 자료가 늦게 와도 덮어쓰지 않게 함
   SY.mine = SY.mine || {}; SY.mine[m.id] = d;
+  if (!SY.viaRoom) { dbWrite(`rooms/${SY.code}/m/${m.id}`, d); return; }
   let x = d; if (JSON.stringify({ m: x }).length > 3800) { x = clone(d); const strip = o => { if (o) PART_KEYS.forEach(k => { if (k !== 'sv' && k !== 'fd') delete o[k]; }); }; strip(x.main); (x.games || []).forEach(strip); (x.subs || []).forEach(strip); x.cut = 1; }
   if (JSON.stringify({ m: x }).length > 3800 && x.evals) { delete x.evals; }
   roomSay({ m: x });
@@ -4291,6 +4319,7 @@ async function syncConnect() {
       if (ch) { save(); if (!ui.sb) render(); }
     }, e => { SY.err = '연결이 끊겼어요 · 기기 연결에서 다시 연결해 주세요'; renderSyncBar(); }));
     SY.unsub.push(db.collection(`${base}/dev`).onSnapshot(snap => { Object.keys(SY.devs).forEach(k => { if (k[0] !== 'r') delete SY.devs[k]; }); snap.docs.forEach(x => { SY.devs[x.id] = x.data(); }); renderSyncBar(); }, () => { }));
+    SY.unsub.push(db.collection(`${base}/ack`).onSnapshot(snap => { snap.docChanges().forEach(x => { const d = x.doc.data(); if (x.type === 'removed' || !d || !SY.sent || !SY.sent[d.id] || SY.sent[d.id].acks[d.court]) return; SY.sent[d.id].acks[d.court] = 1; toast(`경기장 ${d.court}번 기기가 메시지를 받았어요`); }); }, () => { }));
     hostPublish(true);
     // 링크만 받은 경기장 기기는 실시간 방으로 보냄 → 진행 기기가 받아서 저장
     try { const room = await claude.use('room'); if (room) { const seen = {}; const take = peers => { let ch = false; peers.forEach(pr => { const pz = pr.presence || {}; if (pz.code && pz.code !== SY.code) return; if (!pz.code && !pz.m && !pz.court) return; if (pz.court) { SY.devs['r' + pz.court] = { court: pz.court, t: Date.now() }; } const d = pz.m; if (d && d.mid && seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] !== 1) { seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] = 1; if (hostMerge(d)) ch = true; } }); if (ch) { save(); if (!ui.sb) render(); } renderSyncBar(); };
@@ -4303,8 +4332,20 @@ async function syncConnect() {
     SY.unsub.push(db.doc(`hosts/${SY.code}`).onSnapshot(snap => { SY.waiting = false; const d = snap.exists ? snap.data() : null; SY.main = d && d.comp ? d.comp : null; SY.hostInfo = d ? d.info : null; courtRebuild(); }, () => { SY.err = '진행 기기와 연결이 끊겼어요 · 다시 연결해 주세요'; renderSyncBar(); }));
     SY.unsub.push(db.collection(`${base}/m`).onSnapshot(snap => { snap.docChanges().forEach(x => { if (x.type === 'removed') delete SY.mdocs[x.doc.id]; else SY.mdocs[x.doc.id] = x.doc.data(); }); if (SY.main) courtRebuild(); }, () => { }));
     // 진행 기기가 보낸 메시지 (전체 / 이 경기장만)
-    SY.msgSeen = SY.msgSeen || {}; const joinAt = Date.now() - 5000;
-    [`${base}/msg/all`, `${base}/msg/c${SY.court}`].forEach(pth => SY.unsub.push(db.doc(pth).onSnapshot(snap => { const d = snap.exists ? snap.data() : null; if (!d || !d.id || SY.msgSeen[d.id] || (d.t || 0) < joinAt) return; SY.msgSeen[d.id] = 1; boardMsg(d.text, d.to === 'all' ? '진행 기기 · 전체' : `진행 기기 → 경기장 ${SY.court}`); }, () => { })));
+    // 처음 받은 메시지(연결 전에 보낸 것)는 건너뛰고, 그 뒤로 바뀐 메시지만 띄움 (기기마다 시계가 달라도 안전)
+    SY.msgSeen = SY.msgSeen || {}; const firstSeen = {};
+    const onMsg = (pth, d) => {
+      if (!firstSeen[pth]) { firstSeen[pth] = 1; if (d && d.id) { const fresh = d.t && Math.abs(Date.now() - d.t) < 20000; if (!fresh) { SY.msgSeen[d.id] = 1; return; } } }
+      if (!d || !d.id || SY.msgSeen[d.id]) return; SY.msgSeen[d.id] = 1;
+      boardMsg(d.text, d.to === 'all' ? '진행 기기 · 전체' : `진행 기기 → 경기장 ${SY.court}`);
+      try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { }
+      if (!SY.viaRoom) dbWrite(`${base}/ack/c${SY.court}`, { id: d.id, court: SY.court, t: Date.now() });   // 받았다고 진행 기기에 알림
+    };
+    const msgPaths = [`${base}/msg/all`, `${base}/msg/c${SY.court}`];
+    msgPaths.forEach(pth => SY.unsub.push(db.doc(pth).onSnapshot(snap => onMsg(pth, snap.exists ? snap.data() : null), () => { })));
+    // 실시간 알림을 놓쳐도 15초마다 한 번 더 확인
+    const poll = setInterval(() => msgPaths.forEach(pth => db.doc(pth).get().then(sn => { if (firstSeen[pth]) onMsg(pth, sn.exists ? sn.data() : null); }).catch(() => { })), 15000);
+    SY.unsub.push(() => clearInterval(poll));
     SY.viaRoom = !(await getRole()).write;
     if (SY.viaRoom) { let room = null; try { room = await claude.use('room'); SY.rm = room ? await room.join(`gsdj-${SY.code}`) : null; } catch (e) { SY.rm = null; } if (!SY.rm && room) SY.rm = { presence: p => room.presence(p), leave: async () => { try { await room.presence({ m: null, code: null, court: null }); } catch (e) { } } }; if (!SY.rm) { SY.err = "이 계정은 경기장 기기로 점수를 보낼 수 없어요 · 선생님에게 이메일 초대('사용' 권한)를 받아 주세요"; } else SY.unsub.push(() => SY.rm && SY.rm.leave().catch(() => { })); }
     const beat = () => SY.viaRoom ? roomSay({}) : dbWrite(`${base}/dev/c${SY.court}`, { court: SY.court, t: Date.now() });
