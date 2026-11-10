@@ -2996,7 +2996,10 @@ function playerStatsView(c, g) {
     ${rows.map((r, i) => `<tr class="${i === 0 && (r.s[main] || 0) > 0 ? 'top1' : ''}"><td class="rank">${(r.s[main] || 0) > 0 ? i + 1 : '-'}</td><td class="l"><b>${esc(r.n)}</b></td>${T ? `<td class="l muted small">${esc(r.t)}</td>` : ''}${D.cols.map((k, j) => `<td class="${j === 0 ? 'pts' : ''}">${r.s[k] || 0}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div><p class="muted tiny" style="margin:10px 0 0">점수판에서 선수 카드의 버튼을 눌러 기록한 것만 들어가요. 팀 점수판을 바로 누른 점수(상대 실수 등)는 개인 기록에 들어가지 않아요.</p>`;
 }
-function sbPart() { const c = S.comp, m = byId(c, ui.sb.m); const parts = partsOf(m); return { c, m, parts, tgt: parts ? parts[ui.sb.sub] : m, sub: m.subs ? m.subs[ui.sb.sub] : null }; }
+function sbPart() { const c = S.comp, m = byId(c, ui.sb.m);
+  // 다음 세트로 넘어간 뒤 진행 기기 자료가 아직 1세트까지만 있어도 세트 칸을 채워 둠 (경기장 기기에서 점수판이 멈추던 문제)
+  if (m && m.games && ui.sb.sub >= m.games.length && !m.subs) while (m.games.length <= ui.sb.sub) m.games.push({ label: `${m.games.length + 1}세트`, sa: '', sb: '' });
+  const parts = partsOf(m); return { c, m, parts, tgt: parts ? parts[ui.sb.sub] : m, sub: m.subs ? m.subs[ui.sb.sub] : null }; }
 function sbPlayers(c, m, sub) {
   if (sub) return { a: [...sub.pa], b: [...sub.pb] };
   return { a: [...(entOf(c, m.a)?.members || [])], b: [...(entOf(c, m.b)?.members || [])] };
@@ -3353,7 +3356,7 @@ function endSBMatch() {
     if (!gamesDecided(m)) {
       const t = teamTotals(m); let next = m.games.findIndex(x => !isFinished(x.sa, x.sb));
       if (next < 0) { m.games.push({ label: `${m.games.length + 1}세트`, sa: '', sb: '' }); next = m.games.length - 1; }
-      sbLoad(next); save(); renderSB();
+      sbLoad(next); if (!s.wasDone) syncMatch(m); save(); renderSB();
       toast(`${m.games[s.sub].label} 끝! 세트 ${t.wa}:${t.wb} · 다음은 ${m.games[next].label}`); return;
     }
   }
