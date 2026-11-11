@@ -1148,6 +1148,8 @@ th.ps, td.ps { background: rgba(31, 63, 191, .05); }
 .court.fresh::after { animation: freshSpin 1.4s linear 5, freshFade 7s ease-out forwards; }
 .ew-pill { animation-iteration-count: 6; } .ew-dots i { animation-iteration-count: 10; }
 @media (prefers-reduced-motion: reduce) { .court.fresh::after, .court.fresh, .ew-pill, .ew-dots i, .bd-card { animation: none !important; } }
+.mem .mem-add { border: 1.5px dashed var(--line-strong, #c9c3b6); background: transparent; color: var(--ink-2, #5b5f73); font-weight: 700; }
+.mem .mem-add:hover { border-color: var(--cobalt, #2648c9); color: var(--cobalt, #2648c9); background: rgba(38, 72, 201, .06); }
 
 </style>
 <header class="topbar">
@@ -2224,7 +2226,7 @@ function viewSetup() {
         <span class="grp-sum">${isSplit() ? (() => { const sp = splitPlan(); return sp.k ? [sp.km ? `남자 ${sp.km}팀(팀당 ${sizeText(sp.m)})` : '', sp.kf ? `여자 ${sp.kf}팀(팀당 ${sizeText(sp.f)})` : ''].filter(Boolean).join(' · ') : '선수를 2명 이상 넣어 주세요'; })() : pl.k ? `${pl.k}팀, 팀당 인원 ${sizeText(pl)}` : '선수를 2명 이상 넣어 주세요'}</span></div>
         <p class="muted tiny" style="margin:0 0 10px">${isSplit() ? `남녀 따로: ${g.by === 'count' ? '팀 수' : '팀 인원'}를 남자·여자에 각각 적용해요. 리그전은 같은 성별 팀끼리만 경기하고, 토너먼트는 남자 팀은 위쪽·여자 팀은 아래쪽에서 올라가 결승에서 만나요.` : '레벨과 성별이 고르게 섞이도록 나눠요.'} 레벨이 없는 선수는 중간(4)으로 보고 나눠요.</p>`; })() : ''}
       ${S.teams?.list.length ? `<p class="muted small" style="margin:0 0 10px">팀 이름 칸을 눌러 이름을 바꿀 수 있어요. 서로 다른 팀의 학생 이름을 차례로 누르면 두 학생이 팀을 바꿔요. ★ 학생(두 번 뛰는 학생)을 누르면 다른 학생으로 바꿀 수 있어요. ${S.mode === 'TEAM' ? '단체전은 남2·여2가 기본이고 남는 학생은 팀에 더해져요.' : ''}${S.mode === 'GROUP' ? '' : '<span class="star">★</span>는 인원이 모자라 한 번 더 뛰는 보조 선수예요.'}</p>
-      <div class="teams">${S.teams.list.map(t => `<div class="team"><div class="team-h"><input class="team-name" id="tn_${t.id}" data-chg="teamName" data-t="${t.id}" value="${esc(t.name)}" maxlength="12" aria-label="${esc(t.name)} 이름 바꾸기" title="눌러서 팀 이름 바꾸기"><small>${t.members.length}명</small></div>${t.tag ? `<span class="pill ${t.tag === '남' ? 'done' : 'warn'}" style="margin-bottom:4px">${t.tag}자 팀</span>` : ''}<div class="mem">${t.members.map((n, j) => `<button class="${genderOf(n)} ${ui.swapSel && ui.swapSel.t === t.id && ui.swapSel.n === n ? 'sel' : ''} ${ui.reveal ? 'deal' : ''}" ${ui.reveal ? `style="animation-delay:${(j * S.teams.list.length + S.teams.list.indexOf(t)) * 110}ms"` : ''} data-act="swapPick" data-t="${t.id}" data-n="${esc(n)}">${esc(n)}${t.extra.includes(n) ? '<span class="star">★</span>' : ''}</button>`).join('')}</div></div>`).join('')}</div>`
+      <div class="teams">${S.teams.list.map(t => `<div class="team"><div class="team-h"><input class="team-name" id="tn_${t.id}" data-chg="teamName" data-t="${t.id}" value="${esc(t.name)}" maxlength="12" aria-label="${esc(t.name)} 이름 바꾸기" title="눌러서 팀 이름 바꾸기"><small>${t.members.length}명</small></div>${t.tag ? `<span class="pill ${t.tag === '남' ? 'done' : 'warn'}" style="margin-bottom:4px">${t.tag}자 팀</span>` : ''}<div class="mem">${t.members.map((n, j) => `<button class="${genderOf(n)} ${ui.swapSel && ui.swapSel.t === t.id && ui.swapSel.n === n ? 'sel' : ''} ${ui.reveal ? 'deal' : ''}" ${ui.reveal ? `style="animation-delay:${(j * S.teams.list.length + S.teams.list.indexOf(t)) * 110}ms"` : ''} data-act="swapPick" data-t="${t.id}" data-n="${esc(n)}">${esc(n)}${t.extra.includes(n) ? '<span class="star">★</span>' : ''}</button>`).join('')}<button class="mem-add" data-act="teamAddOpen" data-t="${t.id}" title="선수 목록에서 이 팀에 넣기">＋ 선수</button></div></div>`).join('')}</div>${(() => { const inT = new Set(S.teams.list.flatMap(t => t.members)); const abs = absentSet(); const free = S.roster.filter(p => !inT.has(p.name) && !abs.has(p.name)); return free.length ? `<p class="muted tiny" style="margin:8px 2px 0">팀에 없는 학생: <b>${free.map(p => esc(p.name)).join(', ')}</b> · 팀의 <b>＋ 선수</b>를 눌러 넣을 수 있어요</p>` : ''; })()}`
       : `<p class="muted small">${S.mode === 'XD' ? '남학생과 여학생이 각각 1명 이상 있어야 팀을 만들 수 있어요.' : S.mode === 'TEAM' ? '단체전은 남학생 2명·여학생 2명 이상이 있어야 팀을 만들 수 있어요.' : '학생을 더 넣으면 팀이 만들어져요.'}</p>`}
     </section>` : '';
   return `<div class="stack">
@@ -2690,6 +2692,20 @@ const MODAL = {
   rubric: () => rubricModal(),
   sync: () => syncModal(),
   msg: () => msgModal(),
+  teamAdd: m => {
+    const t = S.teams.list.find(x => x.id === m.t); if (!t) return '';
+    const abs = absentSet(); const teamOf = n => S.teams.list.find(x => x !== t && x.members.includes(n));
+    const want = t.tag ? (t.tag === '남' ? 'M' : 'F') : null;
+    const cand = S.roster.filter(p => !t.members.includes(p.name) && (!want || p.g === want));
+    const free = cand.filter(p => !teamOf(p.name)), other = cand.filter(p => teamOf(p.name));
+    const chip = p => { const o = teamOf(p.name); return `<button class="chip ${p.g}" data-act="teamAddPick" data-v="${esc(p.name)}" ${abs.has(p.name) ? 'title="오늘 불참"' : ''}>${esc(p.name)}${p.lv ? `<small style="opacity:.6;margin-left:3px">Lv${p.lv}</small>` : ''}${o ? `<small style="opacity:.6;margin-left:4px">· ${esc(o.name)}</small>` : ''}${abs.has(p.name) ? ' <small style="opacity:.6">(불참)</small>' : ''}</button>`; };
+    return `<div class="modal-h"><h3>＋ ${esc(t.name)}에 선수 넣기</h3><button class="icon-btn" data-act="closeModal" aria-label="닫기">×</button></div><div class="modal-b">
+      <div><div class="label" style="margin-bottom:6px">지금 팀원 <span class="muted tiny" style="font-weight:500">누르면 이 팀에서 빠져요</span></div><div class="chips">${t.members.map(n => `<button class="chip ${genderOf(n)}" data-act="teamRemovePick" data-v="${esc(n)}">${esc(n)}${t.extra.includes(n) ? ' ★' : ''} <span style="opacity:.55">✕</span></button>`).join('') || '<span class="muted small">아직 팀원이 없어요</span>'}</div></div>
+      <div><div class="label" style="margin-bottom:6px">팀에 없는 학생</div><div class="chips">${free.map(chip).join('') || '<span class="muted small">모두 팀에 들어가 있어요</span>'}</div></div>
+      ${other.length ? `<div><div class="label" style="margin-bottom:6px">다른 팀 학생 <span class="muted tiny" style="font-weight:500">누르면 원래 팀에서 이 팀으로 옮겨요</span></div><div class="chips">${other.map(chip).join('')}</div></div>` : ''}
+      ${want ? `<p class="muted tiny" style="margin:0">${t.tag}자 팀이라 ${t.tag}학생만 보여요.</p>` : ''}
+    </div><div class="modal-f"><button class="btn primary" data-act="closeModal">다 됐어요</button></div>`;
+  },
   extraPick: m => {
     const t = S.teams.list.find(x => x.id === m.t); if (!t) return '';
     const g = genderOf(m.n); const mixed = S.mode === 'XD' || S.mode === 'TEAM' || S.mode === 'GROUP';
@@ -3840,6 +3856,20 @@ const ACT = {
     refRelease(c, m); m.court = k; m.postponed = false; delete m.bench; if (o) o.bench = c.matches.filter(x => x.done).length;
     assignCourts(c); renderModal(); commit();
     toast(`경기장 ${k}에 올렸어요${o ? ' · 원래 대기하던 경기는 다음 순서로' : ''}${clash.length ? ` · ${clash.join(', ')} 학생은 지금 다른 경기장에 있어요` : ''}`);
+  },
+  teamAddOpen: d => openModal({ type: 'teamAdd', t: d.t }),
+  teamAddPick: d => {
+    const t = S.teams.list.find(x => x.id === ui.modal.t); if (!t) return; const n = d.v;
+    const from = S.teams.list.find(x => x !== t && x.members.includes(n));
+    if (from) { from.members = from.members.filter(x => x !== n); from.extra = from.extra.filter(x => x !== n); }
+    t.members.push(n); S.teams.sig = rosterSig();
+    const live = syncCompTeams(); renderModal(); commit();
+    toast(`${n}${from ? ` · ${from.name} → ${t.name}` : `을(를) ${t.name}에 넣었어요`}${live ? ' · 진행 중인 경기에도 반영' : ''}`);
+  },
+  teamRemovePick: d => {
+    const t = S.teams.list.find(x => x.id === ui.modal.t); if (!t) return;
+    t.members = t.members.filter(x => x !== d.v); t.extra = t.extra.filter(x => x !== d.v); S.teams.sig = rosterSig();
+    const live = syncCompTeams(); renderModal(); commit(); toast(`${d.v}을(를) ${t.name}에서 뺐어요${live ? ' · 진행 중인 경기에도 반영' : ''}`);
   },
   extraSet: d => {
     const md = ui.modal; const t = S.teams.list.find(x => x.id === md.t); if (!t) return;
