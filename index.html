@@ -2141,7 +2141,8 @@ function reportErr(e, where) {
   try { console.error('[gsdj]', where, e); } catch (x) { }
   try { if (SY.code && SY.db && (SY.mode === 'host' || !SY.viaRoom)) SY.db.doc(`rooms/${SY.code}/err/${SY.mode === 'host' ? 'host' : 'c' + SY.court}`).set({ where, msg, st, tab: ui.tab, v: APP_VER, t: Date.now() }).catch(() => { }); } catch (x) { }
 }
-const APP_VER = '2026-11-11b';
+const APP_VER = '2026-11-11c';
+setTimeout(() => { const f = document.querySelector('.sf-by'); if (f && !f.querySelector('.ver')) f.insertAdjacentHTML('beforeend', `<small class="ver" style="opacity:.5">v${APP_VER}</small>`); }, 0);
 function errPanel(e) {
   return `<section class="panel" style="padding:20px;border:2px solid #e0582e"><h3 style="margin:0 0 6px">이 화면을 그리다가 문제가 생겼어요</h3>
     <p class="muted small" style="margin:0 0 10px">다른 탭과 진행 중인 경기는 그대로 쓸 수 있어요. 이 화면을 캡처해서 보내 주시면 바로 고칠게요.</p>
@@ -4094,7 +4095,16 @@ document.addEventListener('keydown', e => {
     if ((e.key === 'z' && (e.ctrlKey || e.metaKey)) || e.key === 'Backspace') ACT.sbUndo();
   }
 });
-window.addEventListener('storage', e => { if (SY.mode === 'court') return; if (e.key === KEY_CUR || e.key === KEY_ARC) { S = lsGet(KEY_CUR) || S; ARC = lsGet(KEY_ARC) || ARC; render(); } });
+// 같은 브라우저의 다른 탭(창)에서 저장했을 때.
+// 진행 기기 탭끼리 서로의 자료를 계속 받아 다시 저장하면 끝없이 주고받으며 화면이 멈춤 → 진행 기기 탭은 다른 탭 자료를 받지 않고 알려만 줌
+let multiWarnAt = 0;
+window.addEventListener('storage', e => {
+  if (SY.mode === 'court') return;
+  if (e.key !== KEY_CUR && e.key !== KEY_ARC) return;
+  if (SY.mode === 'host') { if (Date.now() - multiWarnAt > 60000) { multiWarnAt = Date.now(); toast('이 앱이 다른 탭(창)에서도 열려 있어요. 진행 기기는 한 탭에서만 쓰고 나머지 탭은 닫아 주세요'); } return; }
+  const nx = lsGet(KEY_CUR); if (e.key === KEY_CUR && nx && nx.updatedAt === S.updatedAt) return;
+  S = nx || S; ARC = lsGet(KEY_ARC) || ARC; bgRender();
+});
 
 /* ═══════════════════════ 여러 기기 연결 (아티팩트 공유 데이터베이스) ═══════════════════════
    local: 이 기기에만 저장 / host: 진행 기기(대진표를 만들고 전체 진행) / court: 경기장 기기(맡은 경기장 점수판)
