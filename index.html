@@ -2139,7 +2139,9 @@ function render() {
   else if (ui.tab === 'records') main.innerHTML = viewRecords();
   else if (ui.tab === 'help') main.innerHTML = viewHelp();
   else main.innerHTML = viewArchive();
-  renderModal(); renderSB();
+  // 글자를 입력하는 중(한글 조합 포함)이면 배경 갱신 때문에 창을 다시 그리지 않음
+  { const ae = document.activeElement; const typing = ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(ae.type))) && $('#modalRoot') && $('#modalRoot').contains(ae);
+    if (!typing || renderModal.last !== ui.modal) renderModal(); } renderSB();
   main.querySelectorAll('.tree-scroll').forEach(el => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; });
 }
 function renderTop() {
@@ -2629,7 +2631,13 @@ function renderModal() {
   const html = MODAL[m.type](m);
   // 같은 창을 다시 그릴 때는 스크롤 위치를 그대로 (태도 평가 입력 중 맨 위로 튀지 않게)
   const same = renderModal.last === m; const keep = same ? [...root.querySelectorAll('.modal-back, .modal, .modal-b, .ev-list, [data-keep-scroll]')].map(el => el.scrollTop) : null;
+  // 다시 그려도 입력 중이던 글자·커서는 그대로 (메시지 입력 중 지워지던 문제)
+  const vals = {}; let act = null;
+  if (same) { root.querySelectorAll('input[id], textarea[id]').forEach(el => { if (el.type !== 'checkbox' && el.type !== 'radio') vals[el.id] = el.value; });
+    const ae = document.activeElement; if (ae && root.contains(ae) && ae.id) { act = { id: ae.id }; try { act.s = ae.selectionStart; act.e = ae.selectionEnd; } catch (e) { } } }
   root.innerHTML = `<div class="modal-back" data-act="modalBack"><div class="modal ${m.wide ? 'wide' : ''}" role="dialog" aria-modal="true">${html}</div></div>`;
+  if (same) Object.entries(vals).forEach(([id, v]) => { const el = root.querySelector('#' + CSS.escape(id)); if (el && el.value !== v) el.value = v; });
+  if (act) { const el = root.querySelector('#' + CSS.escape(act.id)); if (el) { el.focus({ preventScroll: true }); try { if (act.s != null) el.setSelectionRange(act.s, act.e); } catch (e) { } } }
   if (keep) [...root.querySelectorAll('.modal-back, .modal, .modal-b, .ev-list, [data-keep-scroll]')].forEach((el, i) => { if (keep[i]) el.scrollTop = keep[i]; });
   renderModal.last = m;
 }
@@ -3643,14 +3651,14 @@ const ACT = {
   rubOpen: () => openModal({ type: 'rubric', wide: true }),
   boardClose: d => boardClose(d.id),
   msgOpen: () => openModal({ type: 'msg' }),
-  msgPreset: d => { const el = $('#msgText'); if (el) { el.value = d.v; el.focus(); } },
+  msgPreset: d => { const el = $('#msgText'); if (el) { el.value = d.v; ui.msgDraft = d.v; el.focus(); } },
   msgTo: d => { ui.msgTo = d.v; renderModal(); },
   msgSend: () => {
     const el = $('#msgText'); const text = (el && el.value || '').trim().slice(0, 120); if (!text) { toast('보낼 내용을 적어 주세요'); return; }
     if (SY.mode !== 'host' || !SY.code) { toast('진행 기기로 연결돼 있을 때만 보낼 수 있어요'); return; }
     const to = ui.msgTo || 'all'; const doc = { id: uid(), text, to, t: Date.now() };
     SY.sent = SY.sent || {}; SY.sent[doc.id] = { acks: {} };
-    dbWrite(`rooms/${SY.code}/msg/${to}`, doc); ui.modal = null; renderModal();
+    dbWrite(`rooms/${SY.code}/msg/${to}`, doc); ui.msgDraft = ''; ui.modal = null; renderModal();
     setTimeout(() => { const a = SY.sent[doc.id]; if (a && !Object.keys(a.acks).length) toast('아직 받았다는 기기가 없어요 · 경기장 기기가 이 수업 코드로 연결돼 있는지, 새 버전으로 새로 고침했는지 확인해 주세요'); }, 20000);
     toast(to === 'all' ? '모든 경기장 기기로 보냈어요' : `경기장 ${to.slice(1)}번 기기로 보냈어요`);
   },
@@ -4010,6 +4018,7 @@ document.addEventListener('click', e => {
   ACT[a](el.dataset, e);
 });
 document.addEventListener('input', e => {
+  if (e.target && e.target.id === 'msgText') ui.msgDraft = e.target.value;
   const el = e.target; const k = el.dataset.in; if (!k) return;
   if (k === 'info') { S.info[el.dataset.k] = el.value.trim(); }
   else if (k === 'rmText') { ui.rm[el.dataset.k] = el.value; }
@@ -4377,7 +4386,7 @@ function msgModal() {
   return `<div class="modal-h"><h3>📣 경기장 기기에 메시지 보내기</h3><button class="icon-btn" data-act="closeModal" aria-label="닫기">×</button></div><div class="modal-b">
     <div><div class="label" style="margin-bottom:6px">받는 곳</div><div class="chips"><button class="chip" data-act="msgTo" data-v="all" aria-pressed="${to === 'all'}">모든 경기장</button>${Array.from({ length: n }, (_, i) => i + 1).map(k => `<button class="chip" data-act="msgTo" data-v="c${k}" aria-pressed="${to === 'c' + k}">경기장 ${k}번${live.includes(k) ? '' : ' <small style="opacity:.6">(연결 안 됨)</small>'}</button>`).join('')}</div></div>
     <div><div class="label" style="margin-bottom:6px">자주 쓰는 말</div><div class="chips">${MSG_PRESETS.map(t => `<button class="chip" data-act="msgPreset" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>
-    <label class="field"><span class="label">메시지 (120자까지)</span><textarea class="input" id="msgText" rows="3" maxlength="120" placeholder="예: 3경기장, 심판 교대해 주세요"></textarea></label>
+    <label class="field"><span class="label">메시지 (120자까지)</span><textarea class="input" id="msgText" rows="3" maxlength="120" placeholder="예: 3경기장, 심판 교대해 주세요">${esc(ui.msgDraft || '')}</textarea></label>
     <p class="muted tiny" style="margin:0">경기장 기기 화면 오른쪽 아래에 전광판 알림처럼 '뿅' 소리와 함께 20초 동안 떠요.</p>
   </div><div class="modal-f"><button class="btn" data-act="closeModal">취소</button><button class="btn primary" data-act="msgSend">보내기</button></div>`;
 }
