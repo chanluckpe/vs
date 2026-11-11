@@ -1144,6 +1144,10 @@ th.ps, td.ps { background: rgba(31, 63, 191, .05); }
 .set-strip .ss b { font-weight: 700; } .set-strip .ss b.w { color: var(--cobalt, #2648c9); }
 .set-strip .ss.live { border-color: #ff8a5c; background: #fff3ec; color: var(--ink); }
 .set-strip .ss.live em::after { content: " 진행 중"; color: #e0582e; }
+/* 무거운 애니메이션은 짧게 끝나게 (태블릿 부담 줄이기) */
+.court.fresh::after { animation: freshSpin 1.4s linear 5, freshFade 7s ease-out forwards; }
+.ew-pill { animation-iteration-count: 6; } .ew-dots i { animation-iteration-count: 10; }
+@media (prefers-reduced-motion: reduce) { .court.fresh::after, .court.fresh, .ew-pill, .ew-dots i, .bd-card { animation: none !important; } }
 
 </style>
 <header class="topbar">
@@ -2129,19 +2133,52 @@ function classLabel(info) {
 function infoLine(info) { const d = info.date ? info.date.slice(5).replace('-', '/') : ''; return [classLabel(info), d].filter(Boolean).join(' · '); }
 
 /* ═══════════════════════ 렌더 ═══════════════════════ */
+// 오류 기록: 화면에 안내 + (기기 연결 중이면) 공유 저장소에 남겨서 원인을 찾을 수 있게
+const ERRS = [];
+function reportErr(e, where) {
+  const msg = String(e && e.message || e); const st = String(e && e.stack || '').split('\n').slice(0, 6).join(' | ');
+  ERRS.push({ where, msg, st, t: Date.now() }); if (ERRS.length > 20) ERRS.shift();
+  try { console.error('[gsdj]', where, e); } catch (x) { }
+  try { if (SY.code && SY.db && (SY.mode === 'host' || !SY.viaRoom)) SY.db.doc(`rooms/${SY.code}/err/${SY.mode === 'host' ? 'host' : 'c' + SY.court}`).set({ where, msg, st, tab: ui.tab, v: APP_VER, t: Date.now() }).catch(() => { }); } catch (x) { }
+}
+const APP_VER = '2026-11-11b';
+function errPanel(e) {
+  return `<section class="panel" style="padding:20px;border:2px solid #e0582e"><h3 style="margin:0 0 6px">이 화면을 그리다가 문제가 생겼어요</h3>
+    <p class="muted small" style="margin:0 0 10px">다른 탭과 진행 중인 경기는 그대로 쓸 수 있어요. 이 화면을 캡처해서 보내 주시면 바로 고칠게요.</p>
+    <pre style="white-space:pre-wrap;font-size:12px;background:#f6f3ec;padding:10px;border-radius:8px;margin:0">${esc(String(e && e.message || e))}\n${esc(String(e && e.stack || '').split('\n').slice(0, 4).join('\n'))}</pre>
+    <div class="row" style="margin-top:12px"><button class="btn" data-act="tab" data-v="play">경기 페이지로</button></div></section>`;
+}
+window.addEventListener('error', ev => { try { reportErr(ev.error || ev.message, 'global'); } catch (x) { } });
+window.addEventListener('unhandledrejection', ev => { try { reportErr(ev.reason, 'promise'); } catch (x) { } });
+/* 다른 기기에서 자료가 들어와 화면을 다시 그릴 때: 손가락으로 누르는 중이거나 막 누른 직후에는 잠깐 미룸.
+   (누르는 사이에 버튼이 새로 그려지면 터치가 무시돼서 '먹통'처럼 보이던 문제) + 너무 잦으면 묶어서 한 번에 */
+const PTR = { down: false, last: 0 };
+['pointerdown', 'touchstart', 'mousedown'].forEach(t => document.addEventListener(t, () => { PTR.down = true; PTR.last = Date.now(); }, { capture: true, passive: true }));
+['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'mouseup'].forEach(t => document.addEventListener(t, () => { PTR.down = false; PTR.last = Date.now(); }, { capture: true, passive: true }));
+let bgT = null, bgLast = 0;
+function bgRender() {
+  if (bgT) return;
+  const wait = () => { const since = Date.now() - PTR.last; if (PTR.down || since < 500) return Math.max(150, 500 - since); const gap = Date.now() - bgLast; return gap < 700 ? 700 - gap : 0; };
+  const go = () => { const w = wait(); if (w > 0) { bgT = setTimeout(go, w); return; } bgT = null; bgLast = Date.now(); if (ui.sb) renderSyncBar(); else render(); };
+  const w = wait(); bgT = setTimeout(go, w);
+}
 function render() {
   renderTop(); renderTabs(); renderSyncBar();
   const main = $('#main');
   $('#tabs').closest('nav').hidden = SY.mode === 'court';
-  if (SY.mode === 'court') main.innerHTML = viewCourt();
-  else if (ui.tab === 'setup') main.innerHTML = viewSetup();
-  else if (ui.tab === 'play') main.innerHTML = viewPlay();
-  else if (ui.tab === 'records') main.innerHTML = viewRecords();
-  else if (ui.tab === 'help') main.innerHTML = viewHelp();
-  else main.innerHTML = viewArchive();
+  // 한 화면에서 오류가 나도 앱 전체가 멈추지 않게: 오류 안내를 보여 주고 오류 내용을 기록
+  try {
+    if (SY.mode === 'court') main.innerHTML = viewCourt();
+    else if (ui.tab === 'setup') main.innerHTML = viewSetup();
+    else if (ui.tab === 'play') main.innerHTML = viewPlay();
+    else if (ui.tab === 'records') main.innerHTML = viewRecords();
+    else if (ui.tab === 'help') main.innerHTML = viewHelp();
+    else main.innerHTML = viewArchive();
+  } catch (e) { reportErr(e, 'view:' + (SY.mode === 'court' ? 'court' : ui.tab)); main.innerHTML = errPanel(e); }
   // 글자를 입력하는 중(한글 조합 포함)이면 배경 갱신 때문에 창을 다시 그리지 않음
   { const ae = document.activeElement; const typing = ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(ae.type))) && $('#modalRoot') && $('#modalRoot').contains(ae);
-    if (!typing || renderModal.last !== ui.modal) renderModal(); } renderSB();
+    if (!typing || renderModal.last !== ui.modal) { try { renderModal(); } catch (e) { reportErr(e, 'modal:' + (ui.modal && ui.modal.type)); ui.modal = null; try { renderModal(); } catch (e2) { } } } }
+  try { renderSB(); } catch (e) { reportErr(e, 'sb'); }
   main.querySelectorAll('.tree-scroll').forEach(el => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; });
 }
 function renderTop() {
@@ -4015,7 +4052,8 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
   const a = el.dataset.act; if (!ACT[a]) return;
   if (el.tagName === 'A') e.preventDefault();
-  ACT[a](el.dataset, e);
+  try { const r = ACT[a](el.dataset, e); if (r && r.catch) r.catch(er => { reportErr(er, 'act:' + a); toast('문제가 생겼어요 · 다시 눌러 주세요'); }); }
+  catch (er) { reportErr(er, 'act:' + a); toast('문제가 생겼어요 · 다시 눌러 주세요'); try { render(); } catch (x) { } }
 });
 document.addEventListener('input', e => {
   if (e.target && e.target.id === 'msgText') ui.msgDraft = e.target.value;
@@ -4314,7 +4352,7 @@ function courtRebuild() {
   }
   if (SY.awaitNext && S.comp) { const pv = byId(S.comp, SY.awaitNext); if (pv && pv.done) { const nx = S.comp.matches.find(x => x.court === SY.court && !x.done && isPlayable(x)); ui.nextAsk = nx ? { court: SY.court, mid: nx.id, prev: pv.id } : null; if (nx || !pv.evalWait || compFinished(S.comp)) SY.awaitNext = null; } }
   if (ui.sb) { const m = S.comp && byId(S.comp, ui.sb.m); if (!m || (m.done && !ui.sb.wasDone)) { ui.sb = null; releaseWake(); } }
-  if (ui.sb) renderSyncBar(); else render();
+  if (ui.sb) renderSyncBar(); else bgRender();
 }
 async function syncConnect() {
   const db = await getDB();
@@ -4325,13 +4363,13 @@ async function syncConnect() {
     SY.ready = true;
     SY.unsub.push(db.collection(`${base}/m`).onSnapshot(snap => {
       let ch = false; snap.docChanges().forEach(x => { if (x.type !== 'removed' && hostMerge(x.doc.data())) ch = true; });
-      if (ch) { save(); if (!ui.sb) render(); }
+      if (ch) { save(); if (!ui.sb) bgRender(); }
     }, e => { SY.err = '연결이 끊겼어요 · 기기 연결에서 다시 연결해 주세요'; renderSyncBar(); }));
-    SY.unsub.push(db.collection(`${base}/dev`).onSnapshot(snap => { Object.keys(SY.devs).forEach(k => { if (k[0] !== 'r') delete SY.devs[k]; }); snap.docs.forEach(x => { SY.devs[x.id] = x.data(); }); renderSyncBar(); }, () => { }));
+    SY.unsub.push(db.collection(`${base}/dev`).onSnapshot(snap => { Object.keys(SY.devs).forEach(k => { if (k[0] !== 'r') delete SY.devs[k]; }); snap.docs.forEach(x => { SY.devs[x.id] = x.data(); }); if (PTR.down || Date.now() - PTR.last < 500) bgRender(); else renderSyncBar(); }, () => { }));
     SY.unsub.push(db.collection(`${base}/ack`).onSnapshot(snap => { snap.docChanges().forEach(x => { const d = x.doc.data(); if (x.type === 'removed' || !d || !SY.sent || !SY.sent[d.id] || SY.sent[d.id].acks[d.court]) return; SY.sent[d.id].acks[d.court] = 1; toast(`경기장 ${d.court}번 기기가 메시지를 받았어요`); }); }, () => { }));
     hostPublish(true);
     // 링크만 받은 경기장 기기는 실시간 방으로 보냄 → 진행 기기가 받아서 저장
-    try { const room = await claude.use('room'); if (room) { const seen = {}; const take = peers => { let ch = false; peers.forEach(pr => { const pz = pr.presence || {}; if (pz.code && pz.code !== SY.code) return; if (!pz.code && !pz.m && !pz.court) return; if (pz.court) { SY.devs['r' + pz.court] = { court: pz.court, t: Date.now() }; } const d = pz.m; if (d && d.mid && seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] !== 1) { seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] = 1; if (hostMerge(d)) ch = true; } }); if (ch) { save(); if (!ui.sb) render(); } renderSyncBar(); };
+    try { const room = await claude.use('room'); if (room) { const seen = {}; const take = peers => { let ch = false; peers.forEach(pr => { const pz = pr.presence || {}; if (pz.code && pz.code !== SY.code) return; if (!pz.code && !pz.m && !pz.court) return; if (pz.court) { SY.devs['r' + pz.court] = { court: pz.court, t: Date.now() }; } const d = pz.m; if (d && d.mid && seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] !== 1) { seen[d.mid + ':' + d.t + (d.end ? 'e' : '')] = 1; if (hostMerge(d)) ch = true; } }); if (ch) { save(); if (!ui.sb) bgRender(); } renderSyncBar(); };
       try { take(room.peers()); SY.unsub.push(room.onPeers(c => take([...c.joined, ...c.updated]))); } catch (e) { }
       try { SY.rm = await room.join(`gsdj-${SY.code}`); take(SY.rm.peers()); SY.unsub.push(SY.rm.onPeers(c => take([...c.joined, ...c.updated]))); const r2 = SY.rm; SY.unsub.push(() => r2.leave().catch(() => { })); } catch (e) { } } } catch (e) { }
   } else if (SY.mode === 'court') {
