@@ -1610,9 +1610,9 @@ function tnStore() {
 // 진행 중인 경기에 준비 페이지의 팀 이름·팀원 변경을 반영 (이미 끝난 경기는 그때 뛴 선수 그대로 기록)
 function restoreTeamsFrom(c) {
   if (!MODES[c.mode].team) return;
-  const list = c.entrants.filter(e => e.id.startsWith('e_t')).map(e => ({ id: e.id.slice(2), name: e.name, members: [...e.members], extra: [...(e.extra || [])], ...(e.tag ? { tag: e.tag } : {}) }));
+  const list = c.entrants.filter(e => e.id.startsWith('e_t') && !e.out).map(e => ({ id: e.id.slice(2), name: e.name, members: [...e.members], extra: [...(e.extra || [])], ...(e.tag ? { tag: e.tag } : {}) }));
   if (!list.length) return;
-  S.teams = { mode: c.mode, sig: rosterSig(), list, tnk: tnKey() };
+  S.teams = { mode: c.mode, sig: rosterSig(), list, tnk: tnKey(), cid: c.id };
   const st = tnStore(); st[c.mode] = list.map(t => t.name);
 }
 // 진행 중인 대진표에서 팀 빼기: 끝난 경기 기록은 그대로, 안 한 경기는 리그면 빼고 토너먼트면 상대 부전승
@@ -1632,7 +1632,7 @@ function withdrawEntrant(c, eid) {
   if (compFinished(c) && !c.finishedAt) c.finishedAt = Date.now();
 }
 function syncCompTeams() {
-  const c = S.comp; if (!c || c.finishedAt || !S.teams || S.teams.mode !== c.mode || !MODES[c.mode].team) return false;
+  const c = S.comp; if (!c || c.finishedAt || !S.teams || S.teams.mode !== c.mode || !MODES[c.mode].team || S.teams.cid !== c.id) return false;
   let ch = false;
   c.matches.forEach(m => { if (m.done && !m.ma) { const A = entOf(c, m.a), B = entOf(c, m.b); if (A) m.ma = [...A.members]; if (B) m.mb = [...B.members]; } });
   S.teams.list.forEach(t => { const e = entOf(c, 'e_' + t.id); if (!e) return;
@@ -1650,8 +1650,12 @@ function patchTeamsLive() {
   });
   S.teams.sig = rosterSig();
 }
+// 지금 진행 중인(같은 반·같은 경기 형태) 대진표
+const liveComp = () => { const c = S.comp; return c && !c.finishedAt && c.mode === S.mode && compTnk(c) === tnKey() ? c : null; };
 function ensureTeams() {
-  if (MODES[S.mode].team && S.teams && S.teams.sig !== rosterSig() && S.comp && !S.comp.finishedAt && S.comp.mode === S.mode && S.teams.mode === S.mode && compTnk(S.comp) === tnKey()) { patchTeamsLive(); return; }
+  // 경기 중에는 준비 페이지의 팀 = 진행 중인 대진표의 팀 (다른 기기·새로고침 뒤에도 그 대진표 팀을 그대로 보여 줌)
+  const lc = MODES[S.mode].team && liveComp();
+  if (lc) { if (!S.teams || S.teams.cid !== lc.id || S.teams.mode !== lc.mode) restoreTeamsFrom(lc); else if (S.teams.sig !== rosterSig()) patchTeamsLive(); if (S.teams && S.teams.cid === lc.id) return; }
   if (!MODES[S.mode].team) { S.teams = null; return; }
   // 반(학급)이 바뀌면 그 반의 팀 이름으로 새로 구성
   const running = S.comp && !S.comp.finishedAt && S.comp.mode === S.mode && compTnk(S.comp) === tnKey();
@@ -3860,10 +3864,11 @@ const ACT = {
   grpStep: d => { S.group = S.group || { by: 'count', count: 2, size: 4 }; const k = S.group.by === 'count' ? 'count' : 'size'; S.group[k] = Math.max(k === 'count' ? 2 : 1, Math.min(40, S.group[k] + +d.d)); S.teams = null; commit(); },
   methodOpen: () => { ui.methodOpen = !ui.methodOpen; render(); },
   methodPick: d => {
+    if (MODES[S.mode].team && liveComp()) { ui.methodOpen = false; render(); toast('경기 중에는 팀 구성 방법을 바꿀 수 없어요 · 경기를 마친 뒤 바꿔 주세요'); return; }
     S.teamMethod = S.teamMethod || {}; S.teamMethod[S.mode] = d.v; ui.methodOpen = false; ui.swapSel = null;
     S.teams = buildTeams(true); revealTeams(); commit(); toast(`${TEAM_METHODS[d.v].label}(으)로 팀을 짰어요`);
   },
-  reshuffle: () => { S.teams = buildTeams(true); ui.swapSel = null; ui.methodOpen = false; revealTeams(); commit(); },
+  reshuffle: () => { if (MODES[S.mode].team && liveComp()) { toast('경기 중에는 팀을 다시 섞을 수 없어요 · 학생 이름을 눌러 맞바꾸거나 ＋ 선수로 바꿔 주세요'); return; } S.teams = buildTeams(true); ui.swapSel = null; ui.methodOpen = false; revealTeams(); commit(); },
   courtSet: d => {
     const c = S.comp, m = byId(c, d.m); if (!m || m.done) return; const k = +d.v;
     if (!k) { refRelease(c, m); m.court = null; m.bench = c.matches.filter(x => x.done).length; assignCourts(c); renderModal(); commit(); toast('경기장에서 내렸어요 · 다음 순서로 돌아가요'); return; }
@@ -3878,7 +3883,7 @@ const ACT = {
   },
   teamDel: d => {
     const t = S.teams.list.find(x => x.id === d.t); if (!t) return;
-    const c = S.comp; const running = c && !c.finishedAt && c.mode === S.mode && S.teams.mode === c.mode && compTnk(c) === tnKey();
+    const c = S.comp; const running = !!liveComp() && S.teams.cid === c.id;
     const inComp = running && entOf(c, 'e_' + t.id);
     confirmBox(`${t.name} 지우기`, `<b>${esc(t.name)}</b> 팀을 지워요.${t.members.length ? ` 팀원 ${t.members.length}명(${esc(t.members.join(', '))})은 '팀에 없는 학생'이 되고, 다른 팀의 <b>＋ 선수</b>로 다시 넣을 수 있어요.` : ''}${inComp ? `<br><br>진행 중인 대진표는 그대로 이어져요. 이 팀이 이미 한 경기 기록은 남기고, <b>아직 안 한 경기만</b> ${c.format === 'league' ? '빠져요' : '상대 팀의 부전승이 돼요'}.` : ''}`, '지우기', () => {
       if (inComp) withdrawEntrant(c, 'e_' + t.id);
@@ -3920,7 +3925,7 @@ const ACT = {
   },
   start: () => {
     const go = () => { syncClass(true); const nc = newComp(); if (!totalPlanned(nc)) { ui.modal = null; renderModal(); toast('인원이 너무 적어 서로 다른 학생끼리 만나는 경기를 만들 수 없어요. 학생을 더 넣거나 종목을 바꿔 주세요.'); return; }
-      archiveCurrent(false); S.comp = nc; ui.modal = null; ui.tab = 'play'; ui.playView = nc.format === 'league' ? 'list' : 'bracket'; commit(); window.scrollTo(0, 0); toast('대진표를 만들었어요. 경기장별 첫 경기를 시작하세요!'); };
+      archiveCurrent(false); S.comp = nc; if (S.teams && MODES[nc.mode].team) S.teams.cid = nc.id; ui.modal = null; ui.tab = 'play'; ui.playView = nc.format === 'league' ? 'list' : 'bracket'; commit(); window.scrollTo(0, 0); toast('대진표를 만들었어요. 경기장별 첫 경기를 시작하세요!'); };
     if (S.comp && S.comp.matches.some(m => m.done && !m.bye) && !S.comp.finishedAt) confirmBox('새 대진표를 만들까요?', `지금 경기(<b>${esc(compTitle(S.comp))}</b>)는 보관함에 저장되고, 새 대진표로 바뀌어요.`, '새로 만들기', go);
     else go();
   },
