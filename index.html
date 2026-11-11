@@ -1615,6 +1615,22 @@ function restoreTeamsFrom(c) {
   S.teams = { mode: c.mode, sig: rosterSig(), list, tnk: tnKey() };
   const st = tnStore(); st[c.mode] = list.map(t => t.name);
 }
+// 진행 중인 대진표에서 팀 빼기: 끝난 경기 기록은 그대로, 안 한 경기는 리그면 빼고 토너먼트면 상대 부전승
+function withdrawEntrant(c, eid) {
+  const e = entOf(c, eid); if (!e) return; e.out = true;
+  const keep = [];
+  c.matches.forEach(m => {
+    if (m.done || (m.a !== eid && m.b !== eid)) { keep.push(m); return; }
+    refRelease(c, m); m.court = null;
+    if (c.format === 'league') return;                       // 리그: 안 한 경기는 없앰
+    const other = m.a === eid ? m.b : m.a;
+    if (isReal(other)) { m.done = true; m.bye = true; m.winner = m.a === eid ? 'b' : 'a'; m.wo = true; m.finishedAt = Date.now(); }
+    else { m.done = true; m.bye = true; m.winner = m.a === eid ? 'b' : 'a'; m.wo = true; }
+    keep.push(m);
+  });
+  c.matches = keep; propagate(c); assignCourts(c);
+  if (compFinished(c) && !c.finishedAt) c.finishedAt = Date.now();
+}
 function syncCompTeams() {
   const c = S.comp; if (!c || c.finishedAt || !S.teams || S.teams.mode !== c.mode || !MODES[c.mode].team) return false;
   let ch = false;
@@ -1930,7 +1946,7 @@ function assignCourts(c) {
     const pool = c.roster.map(p => p.name).filter(n => !busy.has(n) && (!g || genderOf(n, c) === g));
     if (roles.length > 1) {
       // 쉬고 있는 팀 하나가 통째로 심판 (같은 성별 경기면 같은 성별 팀) · 심판을 덜 본 팀 먼저
-      const teams = c.entrants.filter(e => e.members.length >= 2 && !playing.has(e.id) && e.members.every(n => !busy.has(n)) && (!g || e.members.every(n => genderOf(n, c) === g)));
+      const teams = c.entrants.filter(e => !e.out && e.members.length >= 2 && !playing.has(e.id) && e.members.every(n => !busy.has(n)) && (!g || e.members.every(n => genderOf(n, c) === g)));
       if (teams.length) {
         const load = e => e.members.reduce((a, n) => a + (c.refCount[n] || 0), 0) / e.members.length;
         const min = Math.min(...teams.map(load)); const t = shuffle(teams.filter(e => load(e) === min))[0];
@@ -2034,7 +2050,7 @@ function standings(c) {
     c.matches.forEach((m, idx) => { if (m.done && !m.bye) { const lo = loserId(m); const losses = c.matches.filter(x => x.done && !x.bye && loserId(x) === lo).length; if (c.format === 'single' || losses >= 2) elim[lo] = Math.max(elim[lo] || 0, idx + 1); } });
   }
   const ch = champion(c);
-  return c.entrants.map(e => ({ e, ...recs[e.id], gd: recs[e.id].gf - recs[e.id].ga, out: ch === e.id ? 1e9 : (elim[e.id] ?? 1e8) }))
+  return c.entrants.filter(e => !e.out).map(e => ({ e, ...recs[e.id], gd: recs[e.id].gf - recs[e.id].ga, out: ch === e.id ? 1e9 : (elim[e.id] ?? 1e8) }))
     .sort((x, y) => c.format === 'league'
       ? (y.pts - x.pts || y.gd - x.gd || y.gf - x.gf)
       : (y.out - x.out || y.w - x.w || x.l - y.l || y.gd - x.gd));
@@ -3009,7 +3025,7 @@ function refModal(mm) {
   c.matches.filter(x => x.court && !x.done && x.id !== m.id).forEach(x => refNames(x).forEach(n => busy.add(n)));
   const cands = c.roster.map(p => p.name).filter(n => !busy.has(n) && (!rg || genderOf(n, c) === rg));
   const playing = new Set(c.matches.filter(x => x.court && !x.done).flatMap(x => [x.a, x.b]));
-  const teams = roles.length > 1 ? c.entrants.filter(e => e.members.length >= 2 && !playing.has(e.id) && e.members.every(n => !busy.has(n)) && (!rg || e.members.every(n => genderOf(n, c) === rg))) : [];
+  const teams = roles.length > 1 ? c.entrants.filter(e => !e.out && e.members.length >= 2 && !playing.has(e.id) && e.members.every(n => !busy.has(n)) && (!rg || e.members.every(n => genderOf(n, c) === rg))) : [];
   return `<div class="modal-h"><h3>심판 바꾸기 · 경기장 ${m.court}</h3><button class="icon-btn" data-act="closeModal" aria-label="닫기">×</button></div><div class="modal-b">${roles.length > 1 ? `<p class="muted small" style="margin:0">쉬고 있는 팀을 고르면 <b>${roles.join(' · ')}</b> 역할이 자동으로 나뉘어요.</p>
     <div class="chips">${teams.map(e => `<button class="chip" data-act="refTeamSet" data-m="${m.id}" data-t="${e.id}" aria-pressed="${m.refTeam === e.id}">${esc(e.name)}<small style="opacity:.7;margin-left:4px">${esc(e.members.join('·'))}</small></button>`).join('') || '<span class="muted small">지금 쉬고 있는 팀이 없어요</span>'}</div>
     ${m.refs && m.refs.length > 1 ? `<div class="ref-roles in-modal">${m.refs.map((x, i) => `<button data-act="refRole" data-m="${m.id}" data-i="${i}" title="눌러서 다음 학생과 역할 바꾸기"><em>${esc(x.r)}</em>${esc(x.n)}</button>`).join('')}</div><p class="muted tiny" style="margin:0">역할을 누르면 다음 학생과 역할이 바뀌어요.</p>` : ''}
@@ -3863,8 +3879,9 @@ const ACT = {
   teamDel: d => {
     const t = S.teams.list.find(x => x.id === d.t); if (!t) return;
     const c = S.comp; const running = c && !c.finishedAt && c.mode === S.mode && S.teams.mode === c.mode && compTnk(c) === tnKey();
-    if (running && entOf(c, 'e_' + t.id) && c.matches.some(m => m.a === 'e_' + t.id || m.b === 'e_' + t.id)) { toast('진행 중인 대진표에 들어 있는 팀이라 지울 수 없어요 · 경기를 마친 뒤 지워 주세요'); return; }
-    confirmBox(`${t.name} 지우기`, `<b>${esc(t.name)}</b> 팀을 지워요.${t.members.length ? ` 팀원 ${t.members.length}명(${esc(t.members.join(', '))})은 '팀에 없는 학생'이 되고, 다른 팀의 <b>＋ 선수</b>로 다시 넣을 수 있어요.` : ''}`, '지우기', () => {
+    const inComp = running && entOf(c, 'e_' + t.id);
+    confirmBox(`${t.name} 지우기`, `<b>${esc(t.name)}</b> 팀을 지워요.${t.members.length ? ` 팀원 ${t.members.length}명(${esc(t.members.join(', '))})은 '팀에 없는 학생'이 되고, 다른 팀의 <b>＋ 선수</b>로 다시 넣을 수 있어요.` : ''}${inComp ? `<br><br>진행 중인 대진표는 그대로 이어져요. 이 팀이 이미 한 경기 기록은 남기고, <b>아직 안 한 경기만</b> ${c.format === 'league' ? '빠져요' : '상대 팀의 부전승이 돼요'}.` : ''}`, '지우기', () => {
+      if (inComp) withdrawEntrant(c, 'e_' + t.id);
       S.teams.list = S.teams.list.filter(x => x !== t);
       tnStore()[S.mode] = S.teams.list.map(x => x.name); S.teams.sig = rosterSig();
       commit(); toast(`${t.name} 팀을 지웠어요`);
