@@ -4005,7 +4005,7 @@ const ACT = {
     };
     go();
   },
-  evalOpen: d => openModal({ type: 'eval', m: d.m, wide: true, only: d.only || null }),
+  evalOpen: d => { courtEvalKeep(d.m); openModal({ type: 'eval', m: d.m, wide: true, only: d.only || null }); },
   exp: d => doExport(d.k, d.t),
   nextGo: () => { const q = ui.nextAsk; ui.nextAsk = null; if (q) openSB(q.mid); },
   nextLater: () => { ui.nextAsk = null; render(); },
@@ -4025,13 +4025,13 @@ const ACT = {
   syncCourt: async d => { SY.court = +d.v; syncSaveMode(); clearInterval(SY.beat); const beat = () => SY.viaRoom ? roomSay({}) : dbWrite(`rooms/${SY.code}/dev/c${SY.court}`, { court: SY.court, t: Date.now() }); beat(); SY.beat = setInterval(beat, 60000); ui.sb = null; render(); },
   syncLeave: () => { syncStop(false); ui.modal = null; render(); toast('연결을 끊었어요 · 이 기기에만 저장해요'); },
   pending: () => openModal({ type: 'pending' }),
-  evSet: d => { const ev = S.comp.evals[ui.modal.m]; const p = ev.players[d.p] || (ev.players[d.p] = {}); p[d.k] = +d.v; save(); keepScroll(renderModal); },
-  evAll: d => { const ev = S.comp.evals[ui.modal.m]; const p = ev.players[d.p] || (ev.players[d.p] = {}); critOf(S.comp).forEach(x => p[x.k] = +d.v); save(); keepScroll(renderModal); },
+  evSet: d => { courtEvalKeep(ui.modal.m); const ev = S.comp.evals[ui.modal.m]; const p = ev.players[d.p] || (ev.players[d.p] = {}); p[d.k] = +d.v; save(); courtEvalSave(); keepScroll(renderModal); },
+  evAll: d => { courtEvalKeep(ui.modal.m); const ev = S.comp.evals[ui.modal.m]; const p = ev.players[d.p] || (ev.players[d.p] = {}); critOf(S.comp).forEach(x => p[x.k] = +d.v); save(); courtEvalSave(); keepScroll(renderModal); },
   evDone: d => {
     const c = S.comp; const ev = c.evals[d.m];
     if (d.back) { save(); if (SY.mode === 'court') courtSendEval(d.m); ui.modal = null; openModal({ type: 'profile', n: d.back, wide: true }); toast('고쳤어요'); return; }
     ev.done = true; ui.modal = null;
-    if (SY.mode === 'court') { courtSendEval(d.m); render(); toast('태도 평가를 진행 기기로 보냈어요'); return; }
+    if (SY.mode === 'court') { courtEvalKeep(d.m); courtSendEval(d.m); courtEvalSave(); render(); toast('태도 평가를 진행 기기로 보냈어요'); return; }
     const left = pendingEvals(c); const mm = byId(c, d.m); if (mm) evalRelease(c, mm); commit();
     toast(left.length ? `평가 완료! 남은 평가 ${left.length}개` : '평가 완료!');
   },
@@ -4127,7 +4127,7 @@ document.addEventListener('input', e => {
   if (k === 'info') { S.info[el.dataset.k] = el.value.trim(); }
   else if (k === 'rmText') { ui.rm[el.dataset.k] = el.value; }
   else if (k === 'recQ') { ui.recQ = el.value; const pos = el.selectionStart; render(); const n = $('#recQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (er) { } }
-  else if (k === 'evNote') { const ev = S.comp.evals[ui.modal.m]; const p = ev.players[el.dataset.p] || (ev.players[el.dataset.p] = {}); p[el.dataset.k] = el.value; save(); }
+  else if (k === 'evNote') { courtEvalKeep(ui.modal.m); const ev = S.comp.evals[ui.modal.m]; const p = ev.players[el.dataset.p] || (ev.players[el.dataset.p] = {}); p[el.dataset.k] = el.value; save(); courtEvalSave(); }
 });
 document.addEventListener('change', e => {
   const el = e.target; const ch = el.dataset.chg;
@@ -4177,8 +4177,19 @@ window.addEventListener('storage', e => {
    rooms/{코드}/m/{경기}   : 경기마다 점수·랠리 기록 (점수판을 쓴 기기가 올림)
    rooms/{코드}/dev/c{번호}: 경기장 기기 연결 표시 */
 const KEY_SYNC = 'gsdj.v2.sync';
+// 경기장 기기에서 쓰는 중인 태도 평가: 진행 기기 자료가 들어와도, 새로고침해도 지워지지 않게 따로 붙잡아 둠
+function courtEvalKeep(mid) {
+  if (SY.mode !== 'court' || !S.comp || !mid) return;
+  SY.evals = SY.evals || {}; const c = S.comp;
+  if (SY.evals[mid] && c.evals[mid] !== SY.evals[mid] && !(c.evals[mid] && c.evals[mid].done)) c.evals[mid] = SY.evals[mid];
+  SY.evals[mid] = c.evals[mid] || (c.evals[mid] = { players: {}, done: false });
+  courtEvalSave();
+}
+function courtEvalSave() { try { if (SY.mode === 'court') lsSet('gsdj.v2.cevals', { cid: S.comp && S.comp.id, evals: SY.evals || {} }); } catch (e) { } }
 const SY = { mode: 'local', code: '', court: 1, db: undefined, ready: false, unsub: [], devs: {}, mdocs: {}, main: null, q: {}, lastMain: '', err: '', pub: null, beat: null, waiting: false };
 (() => { const v = lsGet(KEY_SYNC); if (v && ['host', 'court'].includes(v.mode) && v.code) Object.assign(SY, { mode: v.mode, code: v.code, court: v.court || 1 }); })();
+// 경기장 기기: 새로고침 전 쓰던 태도 평가 되살리기
+(() => { if (SY.mode !== 'court') return; const v = lsGet('gsdj.v2.cevals'); if (v && v.evals) SY.evals = v.evals; })();
 let S_LOCAL = null;
 const PART_KEYS = ['ev', 'sv', 'base', 'per', 'fd'];
 /* ───────── Supabase 공유 저장소: claude.ai 로그인 없이 기기 연결 ─────────
@@ -4422,7 +4433,9 @@ function courtRebuild() {
     const c = clone(SY.main);
     Object.values(SY.mdocs).forEach(d => { if (d && d.cid === c.id) { const m = byId(c, d.mid); if (m && !m.done) applyPayload(m, d); } });
     Object.values(SY.mine || {}).forEach(d => { if (d && d.cid === c.id) { const m = byId(c, d.mid); if (m && !m.done) applyPayload(m, d); } });
-    Object.entries(SY.evals || {}).forEach(([id, e]) => { c.evals[id] = e; });   // 이 기기에서 쓰던 태도 평가는 유지
+    // 이 기기에서 쓰던 태도 평가는 유지 (진행 기기 자료가 새로 와도 덮어쓰지 않음). 진행 기기에 '완료'로 들어간 평가만 정리
+    Object.entries(SY.evals || {}).forEach(([id, e]) => { if (!byId(c, id)) return; const h = c.evals[id]; if (h && h.done) { delete SY.evals[id]; return; } c.evals[id] = e; });
+    courtEvalSave();
     S.comp = c;
   }
   if (SY.awaitNext && S.comp) { const pv = byId(S.comp, SY.awaitNext); if (pv && pv.done) { const nx = S.comp.matches.find(x => x.court === SY.court && !x.done && isPlayable(x)); ui.nextAsk = nx ? { court: SY.court, mid: nx.id, prev: pv.id } : null; if (nx || !pv.evalWait || compFinished(S.comp)) SY.awaitNext = null; } }
