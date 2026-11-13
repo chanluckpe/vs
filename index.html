@@ -1153,6 +1153,22 @@ th.ps, td.ps { background: rgba(31, 63, 191, .05); }
 .team-h { position: relative; }
 .team-del { margin-left: auto; width: 26px; height: 26px; flex: none; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--ink-3, #8a8fa3); font-size: 18px; line-height: 1; cursor: pointer; }
 .team-del:hover { color: #d2402b; border-color: #f3c2b8; background: #fff3f0; }
+/* 결과지: 태도 평가 서술 모음 */
+.evn { display: flex; flex-direction: column; gap: 12px; }
+.evn-intro { margin: 0 0 2px; font-size: 13px; color: var(--ink-2, #5b5f73); }
+.evn-stu { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; }
+.evn-h { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: var(--surface-2, #f6f3ec); border-bottom: 1px solid var(--line); }
+.evn-h b { font-size: 17px; }
+.evn-g { font-size: 11px; font-weight: 800; color: #fff; border-radius: 5px; padding: 1px 6px; } .evn-g.M { background: #2f5bdc; } .evn-g.F { background: #e0508f; }
+.evn-t { font-size: 13px; color: var(--ink-2, #5b5f73); } .evn-n { margin-left: auto; font-size: 12px; color: var(--ink-3, #8a8fa3); }
+.evn-row { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.5; }
+.evn-row:first-of-type { border-top: 0; }
+.evn-row.pf { grid-template-columns: minmax(0, 1fr); background: #fbfaf6; }
+.evn-m { font-size: 12.5px; font-weight: 700; color: var(--ink-2, #5b5f73); display: flex; flex-direction: column; gap: 3px; }
+.evn-avg { font-weight: 600; font-size: 12px; color: var(--cobalt, #2648c9); }
+.evn-c { display: flex; flex-direction: column; gap: 4px; word-break: keep-all; }
+.evn .k { font-style: normal; font-size: 11px; font-weight: 800; border-radius: 5px; padding: 1px 6px; margin-right: 6px; color: #fff; }
+.evn .k.t { background: #2648c9; } .evn .k.p { background: #2f9e6a; } .evn .k.s { background: #e0802e; } .evn .k.i { background: #8a64d6; }
 
 </style>
 <header class="topbar">
@@ -3650,6 +3666,32 @@ async function makePDF(pages) {
   return doc.output('arraybuffer');
 }
 // 결과지 PDF: 1쪽 팀별 기록(또는 순위표), 2쪽부터 학생별 기록 (줄 단위로 끊어 잘리지 않게)
+// 학생별 태도 평가 서술 모음 (경기마다 남긴 교사 관찰 소견·동료 관찰 소견 + 학생 카드의 특장점·보완점)
+function evalNotesNode(c) {
+  const rows = [];
+  c.roster.forEach(p => {
+    const items = [];
+    c.matches.forEach(m => {
+      const v = c.evals[m.id] && c.evals[m.id].players && c.evals[m.id].players[p.name]; if (!v || !m.done) return;
+      const note = (v.note || '').trim(), peer = (v.peer || '').trim(); if (!note && !peer) return;
+      const me = playersOf(c, m).find(x => x.name === p.name); const opp = me ? (me.side === 'a' ? m.b : m.a) : null;
+      const sc = critOf(c).map(k => v[k.k]).filter(x => typeof x === 'number'); const avg = sc.length ? (sc.reduce((a, b) => a + b, 0) / sc.length).toFixed(1) : '';
+      items.push({ lab: `${stageLabel(c, m)}${opp ? ` · vs ${entName(c, opp, { short: true })}` : ''}`, note, peer, avg });
+    });
+    const pf = c.profile[p.name] || {};
+    if (items.length || pf.s || pf.i) rows.push({ p, items, pf });
+  });
+  if (!rows.length) return null;
+  const d = document.createElement('div'); d.className = 'evn';
+  d.innerHTML = `<p class="evn-intro">경기마다 남긴 서술형 평가를 학생별로 모았어요. <b>교사</b> = 교사 관찰 소견, <b>동료</b> = 친구들이 본 모습.</p>` + rows.map(({ p, items, pf }) => {
+    const team = MODES[c.mode].team ? c.entrants.filter(e => e.members.includes(p.name)).map(e => e.name).join(', ') : '';
+    return `<section class="evn-stu"><div class="evn-h"><span class="evn-g ${p.g}">${p.g === 'M' ? '남' : '여'}</span><b>${esc(p.name)}</b>${team ? `<span class="evn-t">${esc(team)}</span>` : ''}<span class="evn-n">${items.length}경기</span></div>
+      ${pf.s || pf.i ? `<div class="evn-row pf">${pf.s ? `<div><em class="k s">특장점</em>${esc(pf.s)}</div>` : ''}${pf.i ? `<div><em class="k i">보완점</em>${esc(pf.i)}</div>` : ''}</div>` : ''}
+      ${items.map(x => `<div class="evn-row"><div class="evn-m">${esc(x.lab)}${x.avg ? `<span class="evn-avg">평균 ${x.avg}</span>` : ''}</div><div class="evn-c">${x.note ? `<div><em class="k t">교사</em>${esc(x.note)}</div>` : ''}${x.peer ? `<div><em class="k p">동료</em>${esc(x.peer)}</div>` : ''}</div></div>`).join('')}
+    </section>`;
+  }).join('');
+  return d;
+}
 async function resultPDF(c) {
   if (expBusy) return; expBusy = true; toast('결과지 PDF를 만드는 중이에요…');
   const keepC = S.comp, keepQ = ui.recQ, keepT = ui.teacher; let tmp = null;
@@ -3674,6 +3716,16 @@ async function resultPDF(c) {
         const cuts = [...w2.querySelectorAll('tr, .mf-h, .rec-mf > div')].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale) - 2).filter(v => v > 0);
         pages.push(...sliceAtRows(cv, T && AT, cuts));
       } finally { w2.remove(); }
+    }
+    // 태도 평가 서술(교사·동료 관찰 소견)을 학생별로 모은 페이지
+    const nb = AT ? evalNotesNode(c) : null;
+    if (nb) {
+      const w3 = mk(nb, '태도 평가 서술 모음', 1000, 'ev-notes-cap');
+      try {
+        const cv = await shot(w3, 1000); const scale = cv.height / w3.scrollHeight, top0 = w3.getBoundingClientRect().top;
+        const cuts = [...w3.querySelectorAll('.evn-stu, .evn-row')].map(el => Math.round((el.getBoundingClientRect().top - top0) * scale) - 2).filter(v => v > 0);
+        pages.push(...sliceAtRows(cv, false, cuts));
+      } finally { w3.remove(); }
     }
     await offerFile(`${fileBase(c)}_결과지.pdf`, await makePDF(pages));
   } catch (e) { S.comp = keepC; ui.recQ = keepQ; ui.teacher = keepT; toast('결과지를 만들지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요'); }
