@@ -1346,7 +1346,7 @@ const PRESETS = {
   effort: { label: '접전·태도 보상형', desc: '승 3 · 무 2 · 패 1점 · 아깝게 진 팀 보너스 · 진 팀이 태도에서 이기면 보너스(둘 중 하나만)', win: 3, draw: 2, lose: 1, closeOn: true, closeMargin: 3, closePts: 2, attAny: true }
 };
 function rulesOf(c) { return { ...DEFAULT_RULES, ...((c ? c.rules : S.rules) || {}) }; }
-function ruleText(r) { return `승 ${r.win}점 · 무 ${r.draw}점 · 패 ${r.lose}점${r.closeOn ? ` · ${r.closeMargin}점 차 이하로 지면 ${r.closePts}점` : ''}${r.attBonus && r.attitude !== false ? ` · 진 팀이 태도 평가에서 이기면 +${r.attPts}점` : ''}`; }
+function ruleText(r) { return `승 ${r.win}점 · 무 ${r.draw}점 · 패 ${r.lose}점${r.closeOn ? ` · ${(r.sets || 1) > 1 ? '세트당 ' : ''}${r.closeMargin}점 차 이하로 지면 ${r.closePts}점` : ''}${r.attBonus && r.attitude !== false ? ` · 진 팀이 태도 평가에서 이기면 +${r.attPts}점` : ''}`; }
 const setsText = n => n > 1 ? `${n}판 ${Math.ceil(n / 2)}선승` : '단판';
 function gameText(r) { if (r.end === 'time' || r.end === 'inning') return `${(r.sets || 1) > 1 ? setsText(r.sets) + ' · ' : ''}${endText(r)} · 높은 점수 승리`; return `${setsText(r.sets || 1)} · ${r.gamePoint}점 내기${r.deuce ? ' · 듀스(2점 차)' : ''}`; }
 const ruleOf = (f, c) => ruleText(rulesOf(c));
@@ -2048,7 +2048,10 @@ function lossPts(c, close, att) {
 }
 // 태도 보상형: 경기 태도 평가 평균이 더 높은 쪽 ('a'|'b'|null)
 function attWin(c, m) { const r = rulesOf(c); if (!r.attBonus || !attOn(c)) return null; const sa = sideAttitude(c, m); if (!sa || Math.abs(sa[0] - sa[1]) < 1e-9) return null; return sa[0] > sa[1] ? 'a' : 'b'; }
-function loserBonus(c, m, my, opp) { const r = rulesOf(c); return !!r.closeOn && Math.abs(my - opp) <= r.closeMargin; }
+// 아깝게 진 팀 보너스: '몇 점 차 이하'는 경기(세트)마다의 기준. 여러 세트 경기는 총점 차이를 (기준 × 실제로 한 세트 수)와 비교
+// 예) 3점 기준 · 3세트까지 했으면 총점 9점 차 이하, 2세트로 끝났으면 6점 차 이하
+function setsPlayed(m) { return m && m.games && !m.subs ? Math.max(1, m.games.filter(g => (g.sa !== '' && g.sa != null) || (g.sb !== '' && g.sb != null)).length) : 1; }
+function loserBonus(c, m, my, opp) { const r = rulesOf(c); return !!r.closeOn && Math.abs(my - opp) <= r.closeMargin * setsPlayed(m); }
 function entrantRecords(c) {
   const map = {}; c.entrants.forEach(e => map[e.id] = blankRec());
   c.matches.forEach(m => {
@@ -2847,7 +2850,7 @@ function rulesModal() {
     <div class="pts3"><div><span>이기면</span>${step('win')}</div><div><span>비기면</span>${step('draw')}</div><div><span>지면</span>${step('lose')}</div></div>
     <div class="q"><span class="qn">3</span><h4>보너스 승점 <small>(선택)</small></h4></div>
     ${sw('closeOn', d.closeOn, '아깝게 진 팀 보너스', '적은 점수 차로 지면 승점을 따로 줘요')}
-    ${d.closeOn ? `<div class="set-row sub"><div><b>몇 점 차 이하로 지면</b></div>${step('closeMargin', '점 차')}</div><div class="set-row sub"><div><b>받는 승점</b></div>${step('closePts', '점')}</div>` : ''}
+    ${d.closeOn ? `<div class="set-row sub"><div><b>몇 점 차 이하로 지면</b><small class="muted" style="display:block;font-size:12px">세트 경기는 세트마다 이 점수 · 3세트면 총점 ×3 차이까지</small></div>${step('closeMargin', '점 차')}</div><div class="set-row sub"><div><b>받는 승점</b></div>${step('closePts', '점')}</div>` : ''}
     ${sw('attBonus', d.attBonus && d.attitude, '진 팀 태도 보너스', '경기에서 졌지만 태도 평가 점수가 상대보다 높으면 진 승점에 더 줘요 · 이긴 팀은 받지 않아요 · 켜면 태도 평가도 켜져요')}
     ${d.attBonus && d.attitude ? `<div class="set-row sub"><div><b>더 주는 승점</b><span>평가 항목은 [태도 평가] 탭에서 골라요</span></div>${step('attPts', '점')}</div>` : ''}${d.closeOn && d.attBonus && d.attitude ? `<p class="muted tiny" style="margin:6px 2px 0">접전 보너스와 태도 보너스를 둘 다 받을 수 있으면 <b>더 큰 쪽 하나만</b> 줘요 (중복 없음)</p>` : ''}`;
   if (tab === 'ref') body = `
