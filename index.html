@@ -2025,9 +2025,11 @@ const evalHold = (c, m) => !!(m && m.done && m.evalWait && m.court && attOn(c) &
 function evalRelease(c, m) { if (!m || !m.evalWait) return false; delete m.evalWait; assignCourts(c); return true; }
 function pendingEvals(c) { if (!attOn(c)) return []; return c.matches.filter(m => m.done && !m.bye && !(c.evals[m.id]?.done)); }
 function sideAttitude(c, m) {
-  const e = c.evals[m.id]; if (!e || !e.done) return null;
-  const ps = playersOf(c, m); const A = [], B = [];
-  ps.forEach(p => { const v = evalAvgOf(e.players[p.name], c); if (v != null) (p.side === 'a' ? A : B).push(v); });
+  // 팀(복식·팀 경기)은 팀원 모두의 태도 평균끼리 비교. '평가 완료'를 안 눌렀어도 모든 선수가 평가돼 있으면 계산
+  const e = c.evals[m.id]; if (!e || !e.players) return null;
+  const ps = playersOf(c, m); const A = [], B = []; let miss = 0;
+  ps.forEach(p => { const v = evalAvgOf(e.players[p.name], c); if (v != null) (p.side === 'a' ? A : B).push(v); else miss++; });
+  if (!e.done && miss) return null;
   return A.length && B.length ? [mean(A), mean(B)] : null;
 }
 
@@ -2043,7 +2045,7 @@ function applyRes(rec, my, opp, won, bonus, c) {
 function lossPts(c, close, att) {
   const r = rulesOf(c); let pts = r.lose, kind = null;
   if (close && r.closeOn && r.closePts > pts) { pts = r.closePts; kind = 'close'; }
-  if (att && r.attBonus && attOn(c) && r.lose + r.attPts > pts) { pts = r.lose + r.attPts; kind = 'att'; }
+  if (att && r.attBonus && attOn(c) && r.lose + r.attPts >= pts) { pts = r.lose + r.attPts; kind = 'att'; }   // 같은 점수면 태도 보너스로 표시
   return { pts, kind };
 }
 // 태도 보상형: 경기 태도 평가 평균이 더 높은 쪽 ('a'|'b'|null)
